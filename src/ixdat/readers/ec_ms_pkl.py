@@ -3,10 +3,10 @@ from . import TECHNIQUE_CLASSES
 import pickle
 from ..data_series import TimeSeries, ValueSeries
 from ..measurements import Measurement
-from .biologic import BIOLOGIC_COLUMN_NAMES, get_column_unit
+from .biologic import BIOLOGIC_COLUMN_NAMES, get_column_unit_name
 
 
-ECMSMeasruement = TECHNIQUE_CLASSES["EC-MS"]
+ECMSMeasurement = TECHNIQUE_CLASSES["EC-MS"]
 
 
 class EC_MS_CONVERTER:
@@ -21,7 +21,7 @@ class EC_MS_CONVERTER:
 
         Args:
             path_to_file (Path): The full abs or rel path including the
-            ".pkl" extension.
+                ".pkl" extension.
         """
         with open(file_path, "rb") as f:
             ec_ms_dict = pickle.load(f)
@@ -37,19 +37,25 @@ class EC_MS_CONVERTER:
 
 
 def measurement_from_ec_ms_dataset(
-    ec_ms_dict, name=None, cls=ECMSMeasruement, reader=None, **kwargs,
+    ec_ms_dict,
+    name=None,
+    cls=ECMSMeasurement,
+    reader=None,
+    technique=None,
+    **kwargs,
 ):
     """Return an ixdat Measurement with the data from an EC_MS data dictionary.
 
     This loops through the keys of the EC-MS dict and searches for MS and
     EC data. Names the dataseries according to their names in the original
-    dict. Omitts any other data as well as metadata.
+    dict. Omits any other data as well as metadata.
 
     Args:
         ec_ms_dict (dict): The EC_MS data dictionary
         name (str): Name of the measurement
         cls (Measurement class): The class to return a measurement of
-        reader (Reader object): typically what calls this funciton with its read() method
+        reader (Reader object): The class which read ec_ms_dataset from file
+        technique (str): The name of the technique
     """
 
     if "Ewe/V" in ec_ms_dict and "<Ewe>/V" in ec_ms_dict:
@@ -66,9 +72,7 @@ def measurement_from_ec_ms_dataset(
 
     for col in cols_str:
         if col.endswith("-x"):
-            cols_list.append(
-                TimeSeries(col, "s", ec_ms_dict[col], ec_ms_dict["tstamp"])
-            )
+            cols_list.append(TimeSeries(col, "s", ec_ms_dict[col], ec_ms_dict["tstamp"]))
 
     if "time/s" in ec_ms_dict:
         cols_list.append(
@@ -87,7 +91,7 @@ def measurement_from_ec_ms_dataset(
         elif col in BIOLOGIC_COLUMN_NAMES and col not in tseries_meas.series_names:
             v_name = col
             tseries = tseries_meas["time/s"]
-            unit_name = get_column_unit(col)
+            unit_name = get_column_unit_name(col)
         else:
             print(f"Not including '{col}' as I don't know what it is.")
             continue
@@ -96,15 +100,22 @@ def measurement_from_ec_ms_dataset(
             print(f"Not including '{col}' due to mismatch size with {tseries}")
             continue
         cols_list.append(
-            ValueSeries(name=v_name, data=data, unit_name=unit_name, tseries=tseries,)
+            ValueSeries(
+                name=v_name,
+                data=data,
+                unit_name=unit_name,
+                tseries=tseries,
+            )
         )
 
+    aliases = {"t": ["time/s"], "raw_potential": ["Ewe/V"], "raw_current": ["I/mA"]}
     obj_as_dict = dict(
         name=name,
-        technique="EC_MS",
+        technique=technique or "EC_MS",
         series_list=cols_list,
         reader=reader,
         tstamp=ec_ms_dict["tstamp"],
+        aliases=aliases,
     )
     obj_as_dict.update(kwargs)
 

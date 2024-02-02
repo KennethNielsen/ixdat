@@ -1,32 +1,91 @@
-from .ec import ECMeasurement
-from ..spectra import Spectrum
-from ..data_series import Field, ValueSeries
 import numpy as np
 from scipy.interpolate import interp1d
-from ..spectra import SpectrumSeries
+
+from .ec import ECMeasurement
+from ..db import PlaceHolderObject
+from ..spectra import Spectrum, SpectroMeasurement
+from ..data_series import Field, ValueSeries
 from ..exporters.sec_exporter import SECExporter
+from ..plotters.sec_plotter import SECPlotter, ECOpticalPlotter
 
 
-class SpectroECMeasurement(ECMeasurement):
-    def __init__(self, *args, **kwargs):
+class SpectroECMeasurement(SpectroMeasurement, ECMeasurement):
+    """Electrochemistry with spectrometry."""
+
+    default_exporter = SECExporter
+    default_plotter = SECPlotter
+
+    def __init__(self, **kwargs):
+        """FIXME: Passing the right key-word arguments on is a mess"""
+        ec_kwargs = {
+            k: v for k, v in kwargs.items() if k in ECMeasurement.get_all_column_attrs()
+        }
+        spec_kwargs = {
+            k: v
+            for k, v in kwargs.items()
+            if k in SpectroMeasurement.get_all_column_attrs()
+        }
+        # FIXME: I think the lines below could be avoided with a PlaceHolderObject that
+        #  works together with MemoryBackend
+        if "series_list" in kwargs:
+            ec_kwargs.update(series_list=kwargs["series_list"])
+            spec_kwargs.update(series_list=kwargs["series_list"])
+        if "component_measurements" in kwargs:
+            ec_kwargs.update(component_measurements=kwargs["component_measurements"])
+            spec_kwargs.update(component_measurements=kwargs["component_measurements"])
+        if "calibration_list" in kwargs:
+            ec_kwargs.update(calibration_list=kwargs["calibration_list"])
+            spec_kwargs.update(calibration_list=kwargs["calibration_list"])
+        if "spectrum_series" in kwargs:
+            spec_kwargs.update(spectrum_series=kwargs["spectrum_series"])
+        SpectroMeasurement.__init__(self, **spec_kwargs)
+        ECMeasurement.__init__(self, **ec_kwargs)
+
+
+class ECXASMeasurement(SpectroECMeasurement):
+    """Electrochemistry with X-ray Absorption Spectroscopy"""
+
+    pass
+
+
+class ECOpticalMeasurement(SpectroECMeasurement):
+    """Electrochemistry with optical Spectroscopy
+
+    This adds, to the SpectroElectrochemistry base class, methods for normalizing to a
+    reference spectrum to get optical density, and for tracking intensity at specific
+    wavelengths.
+    """
+
+    default_plotter = ECOpticalPlotter
+
+    extra_linkers = SpectroECMeasurement.extra_linkers.copy()
+    extra_linkers.update({"ec_optical_measurements": ("spectra", "ref_id")})
+
+    def __init__(self, reference_spectrum=None, ref_id=None, **kwargs):
         """Initialize an SEC measurement. All args and kwargs go to ECMeasurement."""
-        ECMeasurement.__init__(self, *args, **kwargs)
-        self._reference_spectrum = None
+        SpectroECMeasurement.__init__(self, **kwargs)
+        if reference_spectrum:
+            self._reference_spectrum = reference_spectrum
+        elif ref_id:
+            self._reference_spectrum = PlaceHolderObject(ref_id, cls=Spectrum)
         self.tracked_wavelengths = []
         self.plot_waterfall = self.plotter.plot_waterfall
         self.plot_wavelengths = self.plotter.plot_wavelengths
         self.plot_wavelengths_vs_potential = self.plotter.plot_wavelengths_vs_potential
-        self.technique = "S-EC"
+        self.technique = "EC-Optical"
 
     @property
     def reference_spectrum(self):
-        """The spectrum which will by default be used to calculate dOD"""
-        if not self._reference_spectrum or self._reference_spectrum == "reference":
-            self._reference_spectrum = Spectrum.from_field(self["reference"])
+        """The reference spectrum which will by default be used to calculate dOD"""
+        if isinstance(self._reference_spectrum, PlaceHolderObject):
+            self._reference_spectrum = self._reference_spectrum.get_object()
         return self._reference_spectrum
 
     def set_reference_spectrum(
-        self, spectrum=None, t_ref=None, V_ref=None,
+        self,
+        spectrum=None,
+        t_ref=None,
+        V_ref=None,
     ):
         """Set the spectrum used as the reference when calculating dOD.
 
@@ -40,25 +99,13 @@ class SpectroECMeasurement(ECMeasurement):
             V_ref (float): The potential to use as the reference spectrum. This will
                 only work if the potential is monotonically increasing.
         """
-        if (not spectrum) and t_ref:
+        if t_ref and not spectrum:
             spectrum = self.get_spectrum(t=t_ref)
-        if (not spectrum) and V_ref:
+        if V_ref and not spectrum:
             spectrum = self.get_spectrum(V=V_ref)
         if not spectrum:
             raise ValueError("must provide a spectrum, t_ref, or V_ref!")
         self._reference_spectrum = spectrum
-
-    @property
-    def spectra(self):
-        """The Field that is the spectra of the SEC Measurement"""
-        return self["spectra"]
-
-    @property
-    def spectrum_series(self):
-        """The SpectrumSeries that is the spectra of the SEC Measurement"""
-        return SpectrumSeries.from_field(
-            self.spectra, tstamp=self.tstamp, name=self.name + " spectra",
-        )
 
     @property
     def wavelength(self):
@@ -69,23 +116,6 @@ class SpectroECMeasurement(ECMeasurement):
     def wl(self):
         """A numpy array with the wavelengths in [nm] for the SEC spectra"""
         return self.wavelength.data
-
-    @property
-    def plotter(self):
-        """The default plotter for SpectroECMeasurement is SECPlotter"""
-        if not self._plotter:
-            from ..plotters.sec_plotter import SECPlotter
-
-            self._plotter = SECPlotter(measurement=self)
-
-        return self._plotter
-
-    @property
-    def exporter(self):
-        """The default plotter for SpectroECMeasurement is SECExporter"""
-        if not self._exporter:
-            self._exporter = SECExporter(measurement=self)
-        return self._exporter
 
     def calc_dOD(self, V_ref=None, t_ref=None, index_ref=None):
         """Calculate the optical density with respect to a reference
@@ -106,30 +136,32 @@ class SpectroECMeasurement(ECMeasurement):
             ref_spec = self.reference_spectrum
         dOD = -np.log10(counts / ref_spec.y)
         dOD_series = Field(
-            name="$\Delta$ O.D.",
+            name=r"$\Delta$ O.D.",
             unit_name="",
             axes_series=self.spectra.axes_series,
             data=dOD,
         )
         return dOD_series
 
-    def get_spectrum(self, V=None, t=None, index=None, name=None):
+    def get_spectrum(self, V=None, t=None, index=None, name=None, interpolate=True):
         """Return the Spectrum at a given potential V, time t, or index
 
         Exactly one of V, t, and index should be given. If V (t) is out of the range of
-        self.v (self.t), then first or last spectrum will be returned.
+        self.U (self.t), then first or last spectrum will be returned.
 
         Args:
-            V (float): The potential at which to get the spectrum. Measurement.v must
+            V (float): The potential at which to get the spectrum. Measurement.U must
                 be monotonically increasing for this to work.
             t (float): The time at which to get the spectrum
             index (int): The index of the spectrum
             name (str): Optional. name to give the new spectrum if interpolated
+            interpolate (bool): Optional. Set to false to grab closest spectrum rather
+                than interpolating.
 
         Return Spectrum: The spectrum. The data is (spectrum.x, spectrum.y)
         """
-        if V and V in self.v:  # woohoo, can skip interpolation!
-            index = int(np.argmax(self.v == V))
+        if V and V in self.U:  # woohoo, can skip interpolation!
+            index = int(np.argmax(self.U == V))
         elif t and t in self.t:  # woohoo, can skip interpolation!
             index = int(np.argmax(self.t == t))
         if index:  # then we're done:
@@ -138,21 +170,31 @@ class SpectroECMeasurement(ECMeasurement):
         counts = self.spectra.data
         end_spectra = (self.spectrum_series[0].y, self.spectrum_series[-1].y)
         if V:
-            counts_interpolater = interp1d(
-                self.v, counts, axis=0, fill_value=end_spectra, bounds_error=False
-            )
-            # FIXME: This requires that potential and spectra have same tseries!
-            y = counts_interpolater(V)
+            if interpolate:
+                counts_interpolater = interp1d(
+                    self.U, counts, axis=0, fill_value=end_spectra, bounds_error=False
+                )
+                # FIXME: This requires that potential and spectra have same tseries!
+                y = counts_interpolater(V)
+            else:
+                U_diff = np.abs(self.U - V)
+                index = np.argmin(U_diff)
+                y = counts[index]
             name = name or f"{self.spectra.name}_{V}V"
         elif t:
             t_spec = self.spectra.axes_series[0].t
-            counts_interpolater = interp1d(
-                t_spec, counts, axis=0, fill_value=end_spectra, bounds_error=False
-            )
-            y = counts_interpolater(t)
+            if interpolate:
+                counts_interpolater = interp1d(
+                    t_spec, counts, axis=0, fill_value=end_spectra, bounds_error=False
+                )
+                y = counts_interpolater(t)
+            else:
+                t_diff = np.abs(t_spec - t)
+                index = np.argmin(t_diff)
+                y = counts[index]
             name = name or f"{self.spectra.name}_{t}s"
         else:
-            raise ValueError(f"Need t or V or index to select a spectrum!")
+            raise ValueError("Need t or V or index to select a spectrum!")
 
         field = Field(
             data=y,
@@ -163,7 +205,13 @@ class SpectroECMeasurement(ECMeasurement):
         return Spectrum.from_field(field, tstamp=self.tstamp)
 
     def get_dOD_spectrum(
-        self, V=None, t=None, index=None, V_ref=None, t_ref=None, index_ref=None,
+        self,
+        V=None,
+        t=None,
+        index=None,
+        V_ref=None,
+        t_ref=None,
+        index_ref=None,
     ):
         """Return the delta optical density Spectrum given a point and reference point.
 
@@ -178,7 +226,8 @@ class SpectroECMeasurement(ECMeasurement):
             V_ref (float): The potential at which to get the reference spectrum
             t_ref (float): The time at which to get the reference spectrum
             index_ref (int): The index of the reference spectrum
-        Return Spectrum: The dOD spectrum. The data is (spectrum.x, spectrum.y)
+        Return:
+             Spectrum: The dOD spectrum. The data is (spectrum.x, spectrum.y)
         """
         if V_ref or t_ref or index_ref:
             spectrum_ref = self.get_spectrum(V=V_ref, t=t_ref, index=index_ref)
@@ -187,7 +236,7 @@ class SpectroECMeasurement(ECMeasurement):
         spectrum = self.get_spectrum(V=V, t=t, index=index)
         field = Field(
             data=-np.log10(spectrum.y / spectrum_ref.y),
-            name="$\Delta$ OD",
+            name=r"$\Delta$ OD",
             unit_name="",
             axes_series=[self.wavelength],
         )
@@ -196,7 +245,7 @@ class SpectroECMeasurement(ECMeasurement):
     def track_wavelength(self, wl, width=10, V_ref=None, t_ref=None, index_ref=None):
         """Return and cache a ValueSeries for the dOD for a specific wavelength.
 
-        The cacheing adds wl_str to the SECMeasurement's data series, where
+        The caching adds wl_str to the SECMeasurement's data series, where
             wl_str = "w" + int(wl)
             This is dOD. The raw is also added as wl_str + "_raw".
         So, to get the raw counts for a specific wavelength, call this function and
@@ -241,9 +290,9 @@ class SpectroECMeasurement(ECMeasurement):
         dOD_vseries = ValueSeries(
             name=dOD_name, unit_name="", data=dOD_wl, tseries=tseries
         )
-        self[raw_name] = raw_vseries
+        self.replace_series(raw_name, raw_vseries)
         # FIXME: better caching. See https://github.com/ixdat/ixdat/pull/11
-        self[dOD_name] = dOD_vseries
+        self.replace_series(dOD_name, dOD_vseries)
         # FIXME: better caching. See https://github.com/ixdat/ixdat/pull/11
         self.tracked_wavelengths.append(dOD_name)  # For the exporter.
 

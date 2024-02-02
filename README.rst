@@ -26,9 +26,17 @@ Output:
 
     In-situ experimental data made easy
 
-Or rather, than exporting, you can take advantage of ``ixdat``'s powerful analysis
+Or rather than exporting, you can take advantage of ``ixdat``'s powerful analysis
 tools and database backends to be a one-stop tool from messy raw data to public
 repository accompanying your breakthrough publication and advancing our field.
+
+Version
+-------
+This is the latest version.
+
+For changes up to this version, see `CHANGES.rst <https://github.com/ixdat/ixdat/blob/main/CHANGES.rst>`_
+
+For ixdat 0.1.9 see the `v0.1.x branch <https://github.com/ixdat/ixdat/tree/v0.1.x>`_.
 
 About
 -----
@@ -37,9 +45,9 @@ About
 
 Documentation is at https://ixdat.readthedocs.io
 
-In addition to a **pluggable** parser interface for importing your data format, ``ixdat`` it also includes
+In addition to a **pluggable** parser interface for importing your data format, ``ixdat`` also includes
 pluggable exporters and plotters, as well as a database interface. A relational model of experimental data is
-thought into every level.
+designed into every level.
 
 .. list-table:: Techniques and Readers
    :widths: 20 15 50
@@ -67,16 +75,19 @@ thought into every level.
      - Released
      - - msrh_sec: .csv file sets from Imperial College London's SEC system
    * - X-ray photoelectron spectroscopy (XPS)
-     - Future
-     -
+     - Development
+     - - avantage: .avg files from Thermo Scientific's Avantage software
    * - X-ray diffraction (XRD)
-     - Future
-     -
+     - Development
+     - - xrdml: .xrdml files from e.g. PanAnalytical's Empyereon
+   * - In-situ Electrochemistry - X-ray adsorption spectroscopy
+     - Development
+     - - qexafs: .dat files from Diamond's B18 beamline
    * - Low-Energy Ion Scattering (LEIS)
      - Future
      -
 
-Tutorials are described at https://ixdat.readthedocs.io/en/latest/tutorials.html
+Tutorials are provided at https://ixdat.readthedocs.io/en/latest/tutorials/index.html
 
 Installation
 ------------
@@ -102,21 +113,27 @@ Article repositories
 ``ixdat`` is shown in practice in a growing number of open repositories of data and analysis
 for academic publications:
 
-- Tracking oxygen atoms in electrochemical CO oxidation - Part II: Lattice oxygen reactivity in oxides of Pt and Ir
+- Soren B. Scott, et al.  **Tracking oxygen atoms in electrochemical CO oxidation –Part I: Oxygen exchange via CO2 hydration**. `Electrochimica Acta, 374, 137842 <https://doi.org/10.1016/j.electacta.2021.137842>`_, **2021**.
 
-  - Article: https://doi.org/10.1016/j.electacta.2021.137844
-  - Repository: https://github.com/ScottSoren/pyCOox_public
+  Repository: https://github.com/ScottSoren/pyCOox_public
 
-- Dynamic Interfacial Reaction Rates from Electrochemistry - Mass Spectrometry
+- Soren B. Scott, et al.  **Tracking oxygen atoms in electrochemical CO oxidation –Part II: Lattice oxygen reactivity in oxides of Pt and Ir**. `Electrochimica Acta, 374, 137844 <https://doi.org/10.1016/j.electacta.2021.137844>`_, **2021**.
 
-  - Article: https://doi.org/10.1021/acs.analchem.1c00110
-  - Repository: https://github.com/kkrempl/Dynamic-Interfacial-Reaction-Rates
+  Repository: https://github.com/ScottSoren/pyCOox_public
+
+- Kevin Krempl, et al. **Dynamic Interfacial Reaction Rates from Electrochemistry - Mass Spectrometry**. `Journal of Analytical Chemistry. 93, 7022-7028 <https://doi.org/10.1021/acs.analchem.1c00110>`_, **2021**
+
+  Repository: https://github.com/kkrempl/Dynamic-Interfacial-Reaction-Rates
+
+- Junheng Huang, et al. **Online Electrochemistry−Mass Spectrometry Evaluation of the Acidic Oxygen Evolution Reaction at Supported Catalysts**. `ACS Catal. 11, 12745-12753 <https://doi.org/10.1021/acscatal.1c03430>`_, **2021**
+
+  Repository: https://github.com/ScottSoren/Huang2021
 
 
 Join us
 -------
 
-`ixdat`` is free and open source software and we welcome input and new collaborators. Please help us improve!
+``ixdat`` is free and open source software and we welcome input and new collaborators. Please help us improve ``ixdat``!
 
-Contact us (sbscott@ic.ac.uk) or just
-`get started developing <https://ixdat.readthedocs.io/en/latest/developing.html>`_.
+Contact us (https://github.com/ixdat/ixdat/discussions or sbscott@ic.ac.uk) or just
+`get started developing <https://ixdat.readthedocs.io/en/latest/developing/index.html>`_.

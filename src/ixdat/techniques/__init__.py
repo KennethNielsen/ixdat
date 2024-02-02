@@ -7,11 +7,18 @@ Constants:
         technique-specific functionality.
 """
 
-from .ec import ECMeasurement
-from .cv import CyclicVoltammagram
-from .ms import MSMeasurement
-from .ec_ms import ECMSMeasurement
-from .spectroelectrochemistry import SpectroECMeasurement
+from .ec import ECMeasurement, ECCalibration
+from .cv import CyclicVoltammogram, CyclicVoltammagram  # The latter is deprecated.
+from .ms import MSMeasurement, MSCalibration, MSSpectrum, SpectroMSMeasurement
+from .ec_ms import ECMSMeasurement, ECMSCalibration
+from .spectroelectrochemistry import (
+    SpectroECMeasurement,
+    ECXASMeasurement,
+    ECOpticalMeasurement,
+)
+from .reactor import ReactorMeasurement, SpectroReactorMeasurement, ReactorCalibration
+
+from ..spectra import Spectrum
 from ..measurements import Measurement  # for importing in the technique modules
 
 # TODO: Is something like DecoMeasurement a Measurement or something else?
@@ -19,8 +26,26 @@ from ..measurements import Measurement  # for importing in the technique modules
 TECHNIQUE_CLASSES = {
     "simple": Measurement,
     "EC": ECMeasurement,
-    "CV": CyclicVoltammagram,
+    "CV": CyclicVoltammogram,
     "MS": MSMeasurement,
     "EC-MS": ECMSMeasurement,
+    "XRD": Spectrum,
+    "XPS": Spectrum,
+    "XAS": Spectrum,
+    "MS_spectra": MSSpectrum,
+    "SEC": SpectroECMeasurement,
+    "EC-Optical": ECOpticalMeasurement,
+    "EC-XAS": ECXASMeasurement,
+    "MS-MS_spectra": SpectroMSMeasurement,
+    "reactor": ReactorMeasurement,
+    "reactor-MS_spectra": SpectroReactorMeasurement,
     "S-EC": SpectroECMeasurement,
+}
+
+CALIBRATION_CLASSES = {
+    "EC": ECCalibration,
+    "CV": ECCalibration,
+    "MS": MSCalibration,
+    "EC-MS": ECMSCalibration,
+    "reactor": ReactorCalibration,
 }

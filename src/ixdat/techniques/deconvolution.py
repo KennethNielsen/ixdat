@@ -9,19 +9,24 @@ import matplotlib.pyplot as plt
 from numpy.fft import fft, ifft, ifftshift, fftfreq  # noqa
 import numpy as np
 
+# FIXME: too much abbreviation in this module.
+# TODO: Implement the PR review here: https://github.com/ixdat/ixdat/pull/4
+#  Perhaps best to merge [master] into [deconvolution], improve the module on the
+#  latter branch, and then reopen the PR.
+
 
 class DecoMeasurement(ECMSMeasurement):
     """Class implementing deconvolution of EC-MS data"""
 
-    def __intit__(self, name, **kwargs):
-        """initialize a deconvolution EC-MS measurement
+    def __init__(self, name, **kwargs):
+        """Initialize a deconvolution EC-MS measurement
 
         Args:
             name (str): The name of the measurement"""
         super().__init__(name, **kwargs)
 
     def grab_partial_current(
-        self, signal_name, kernel_obj, tspan=None, t_bg=None, snr=10
+        self, signal_name, kernel_obj, tspan=None, tspan_bg=None, snr=10
     ):
         """Return the deconvoluted partial current for a given signal
 
@@ -31,11 +36,12 @@ class DecoMeasurement(ECMSMeasurement):
             kernel_obj (Kernel): Kernel object which contains the mass transport
                 parameters
             tspan (list): Timespan for which the partial current is returned.
-            t_bg (list): Timespan that corresponds to the background signal.
+            tspan_bg (list): Timespan that corresponds to the background signal.
             snr (int): signal-to-noise ratio used for Wiener deconvolution.
         """
+        # TODO: comments in this method so someone can tell what's going on!
 
-        t_sig, v_sig = self.grab_cal_signal(signal_name, tspan=tspan, t_bg=t_bg)
+        t_sig, v_sig = self.grab_cal_signal(signal_name, tspan=tspan, tspan_bg=tspan_bg)
 
         kernel = kernel_obj.calculate_kernel(
             dt=t_sig[1] - t_sig[0], duration=t_sig[-1] - t_sig[0]
@@ -49,7 +55,7 @@ class DecoMeasurement(ECMSMeasurement):
         partial_current = partial_current * sum(kernel)
         return t_sig, partial_current
 
-    def extract_kernel(self, signal_name, cutoff_pot=0, tspan=None, t_bg=None):
+    def extract_kernel(self, signal_name, cutoff_pot=0, tspan=None, tspan_bg=None):
         """Extracts a Kernel object from a measurement.
 
         Args:
@@ -60,11 +66,11 @@ class DecoMeasurement(ECMSMeasurement):
                 impulse.
             tspan(list): Timespan from which the kernel/impulse response is
                 extracted.
-            t_bg (list): Timespan that corresponds to the background signal.
+            tspan_bg (list): Timespan that corresponds to the background signal.
         """
         x_curr, y_curr = self.grab_current(tspan=tspan)
         x_pot, y_pot = self.grab_potential(tspan=tspan)
-        x_sig, y_sig = self.grab_signal(signal_name, tspan=tspan, t_bg=t_bg)
+        x_sig, y_sig = self.grab_signal(signal_name, tspan=tspan, tspan_bg=tspan_bg)
 
         if signal_name == "M32":
             t0 = x_curr[np.argmax(y_pot > cutoff_pot)]  # time of impulse
@@ -97,7 +103,10 @@ class Kernel:
     # TODO: Make class inherit from Measurement, add properties to store kernel
     # TODO: Reference equations to paper.
     def __init__(
-        self, parameters={}, MS_data=None, EC_data=None,
+        self,
+        parameters={},  # FIXME: no mutable default arguments!
+        MS_data=None,
+        EC_data=None,
     ):
         """Initializes a Kernel object either in functional form by defining the
         mass transport parameters or in the measured form by passing of EC-MS
@@ -117,11 +126,11 @@ class Kernel:
                     current, potential).
         """
 
-        if MS_data is not None and parameters:  # TODO: Make two different classes
+        if MS_data and parameters:  # TODO: Make two different classes
             raise Exception(
                 "Kernel can only be initialized with data OR parameters, not both"
             )
-        if EC_data is not None and MS_data is not None:
+        if EC_data and MS_data:
             print("Generating kernel from measured data")
             self.type = "measured"
         elif parameters:
@@ -204,13 +213,15 @@ class Kernel:
             volflow_cap = self.params["volflow_cap"]
             henry_vola = self.params["henry_vola"]
 
-            tdiff = t_kernel * diff_const / (work_dist ** 2)
+            tdiff = t_kernel * diff_const / (work_dist**2)
 
             def fs(s):
+                # See Krempl et al, 2021. Equation 6.
+                #     https://pubs.acs.org/doi/abs/10.1021/acs.analchem.1c00110
                 return 1 / (
                     sqrt(s) * sinh(sqrt(s))
                     + (vol_gas * henry_vola / 0.196e-4 / work_dist)
-                    * (s + volflow_cap / vol_gas * work_dist ** 2 / diff_const)
+                    * (s + volflow_cap / vol_gas * work_dist**2 / diff_const)
                     * cosh(sqrt(s))
                 )
 

@@ -1,6 +1,7 @@
 """Module defining the ixdat csv reader, so ixdat can read the files it exports."""
 
 from pathlib import Path
+import json
 import numpy as np
 import re
 import pandas as pd
@@ -11,15 +12,17 @@ from ..spectra import Spectrum, SpectrumSeries
 from ..techniques import TECHNIQUE_CLASSES
 
 regular_expressions = {
-    "tstamp": r"tstamp = ([0-9\.]+)",
-    "technique": r"technique = ([A-Za-z\-]+)\n",
-    "N_header_lines": r"N_header_lines = ([0-9]+)",
-    "backend_name": r"backend_name = (\w+)",
+    "name": r"^name = (.+)\n",
+    "tstamp": r"tstamp = ([0-9\.]+)\n",
+    "technique": r"technique = (.+)\n",
+    "N_header_lines": r"N_header_lines = ([0-9]+)\n",
+    "backend_name": r"backend_name = (.+)\n",
     "id": r"id = ([0-9]+)",
     "timecol": r"timecol '(.+)' for: (?:'(.+)')$",
-    "unit": r"/ [(.+)]",
+    "unit": r"/ \[(.+)\]",
     "aux_file": r"'(.*)' in file: '(.*)'",
 }
+bad_keys = ("time_step",)
 
 
 class IxdatCSVReader:
@@ -59,7 +62,8 @@ class IxdatCSVReader:
         """Initialize a Reader for ixdat-exported .csv files. See class docstring."""
         self.name = None
         self.path_to_file = None
-        self.n_line = 0
+        self.n_line = 0  # TODO: decide if this is part of API.
+        # as per https://github.com/ixdat/ixdat/pull/30/files#r816204939
         self.place_in_file = "header"
         self.header_lines = []
         self.tstamp = None
@@ -68,10 +72,11 @@ class IxdatCSVReader:
         self.column_names = []
         self.column_data = {}
         self.technique = None
-        self.aux_series_list = []
+        self.aux_file_objects = {}
         self.measurement_class = Measurement
         self.file_has_been_read = False
         self.measurement = None
+        self.meas_as_dict = {}
 
     def read(self, path_to_file, name=None, cls=None, **kwargs):
         """Return a Measurement with the data and metadata recorded in path_to_file
@@ -148,25 +153,21 @@ class IxdatCSVReader:
             )
             data_series_dict[column_name] = vseries
 
-        data_series_list = list(data_series_dict.values()) + self.aux_series_list
-        obj_as_dict = dict(
+        data_series_list = list(data_series_dict.values())
+        self.meas_as_dict.update(
             name=self.name,
             technique=self.technique,
             reader=self,
             series_list=data_series_list,
             tstamp=self.tstamp,
         )
-        obj_as_dict.update(kwargs)
+        self.meas_as_dict.update(self.aux_file_objects)
+        self.meas_as_dict.update(kwargs)
 
         if issubclass(cls, self.measurement_class):
             self.measurement_class = cls
 
-        if issubclass(self.measurement_class, TECHNIQUE_CLASSES["EC"]):
-            # this is how ECExporter exports current and potential:
-            obj_as_dict["raw_potential_names"] = ("raw potential / [V]",)
-            obj_as_dict["raw_current_names"] = ("raw current / [mA]",)
-
-        self.measurement = self.measurement_class.from_dict(obj_as_dict)
+        self.measurement = self.measurement_class.from_dict(self.meas_as_dict)
         self.file_has_been_read = True
         return self.measurement
 
@@ -185,6 +186,10 @@ class IxdatCSVReader:
     def process_header_line(self, line):
         """Search line for important metadata and set the relevant attribute of self"""
         self.header_lines.append(line)
+        name_match = re.search(regular_expressions["name"], line)
+        if name_match:
+            self.name = name_match.group(1)
+            return
         N_head_match = re.search(regular_expressions["N_header_lines"], line)
         if N_head_match:
             self.N_header_lines = int(N_head_match.group(1))
@@ -197,9 +202,7 @@ class IxdatCSVReader:
         if technique_match:
             self.technique = technique_match.group(1)
             if self.technique in TECHNIQUE_CLASSES:
-                if issubclass(
-                    TECHNIQUE_CLASSES[self.technique], self.measurement_class
-                ):
+                if issubclass(TECHNIQUE_CLASSES[self.technique], self.measurement_class):
                     self.measurement_class = TECHNIQUE_CLASSES[self.technique]
             return
         timecol_match = re.search(regular_expressions["timecol"], line)
@@ -208,11 +211,24 @@ class IxdatCSVReader:
             self.timecols[tcol] = []
             for vcol in timecol_match.group(2).split("' and '"):
                 self.timecols[tcol].append(vcol)
+            return
         aux_file_match = re.search(regular_expressions["aux_file"], line)
         if aux_file_match:
             aux_file_name = aux_file_match.group(1)
             aux_file = self.path_to_file.parent / aux_file_match.group(2)
             self.read_aux_file(aux_file, name=aux_file_name)
+            return
+        if " = " in line:
+            key, value = line.strip().split(" = ")
+            if key in bad_keys:
+                return
+            if key in ("name", "id"):
+                return
+            try:
+                self.meas_as_dict[key] = json.loads(value)
+            except json.decoder.JSONDecodeError:
+                print(f"skipping the following line:\n{line}")
+            return
 
         if self.N_header_lines and self.n_line >= self.N_header_lines - 2:
             self.place_in_file = "column names"
@@ -241,7 +257,7 @@ class IxdatCSVReader:
     def read_aux_file(self, path_to_aux_file, name):
         """Read an auxiliary file and include its series list in the measurement"""
         spec = IxdatSpectrumReader().read(path_to_aux_file, name=name)
-        self.aux_series_list += spec.series_list
+        self.aux_file_objects[name] = spec
 
     def print_header(self):
         """Print the file header including column names. read() must be called first."""
@@ -262,14 +278,14 @@ def get_column_unit(column_name):
 class IxdatSpectrumReader(IxdatCSVReader):
     """A reader for ixdat spectra."""
 
-    def read(self, path_to_file, name=None, cls=None, **kwargs):
+    def read(self, path_to_file, name=None, cls=SpectrumSeries, **kwargs):
         """Read an ixdat spectrum.
 
         This reads the header with the process_line() function inherited from
         IxdatCSVReader. Then it uses pandas to read the data.
 
         Args:
-            path_to_file (Path): The full abs or rel path including the ".mpt" extension
+            path_to_file (Path): The full absolute or relative path including extension
             name (str): The name of the measurement to return (defaults to path_to_file)
             cls (Spectrum subclass): The class of measurement to return. By default,
                 cls will be determined from the technique specified in the header of
@@ -278,20 +294,20 @@ class IxdatSpectrumReader(IxdatCSVReader):
 
         Returns cls: a Spectrum of type cls
         """
+        self.name = name or path_to_file.name
         with open(path_to_file, "r") as f:
             for line in f:
                 if self.place_in_file == "header":
                     self.process_line(line)
                 else:
                     break
-
         df = pd.read_csv(path_to_file, sep=",", header=self.N_header_lines - 2)
-        if self.technique == "spectrum":
+        if self.technique.endswith("spectrum"):
             # FIXME: in the future, this needs to cover all spectrum classes
             x_name, y_name = tuple(df.keys())
             x = df[x_name].to_numpy()
             y = df[y_name].to_numpy()
-            cls = cls or Spectrum
+            cls = cls if issubclass(cls, Spectrum) else Spectrum
             return cls.from_data(  # see Spectrum.from_data()
                 x,
                 y,
@@ -303,7 +319,7 @@ class IxdatSpectrumReader(IxdatCSVReader):
                 reader=self,
             )
 
-        elif self.technique == "spectra":
+        elif self.technique.endswith("spectra"):
             # FIXME: in the future, this needs to cover all spectrum series classes
             names = {}
             units = {}
@@ -338,7 +354,7 @@ class IxdatSpectrumReader(IxdatCSVReader):
                 data=y,
                 axes_series=[tseries, xseries],
             )
-            cls = cls or SpectrumSeries
+            cls = cls if issubclass(cls, SpectrumSeries) else SpectrumSeries
             return cls.from_field(  # see SpectrumSeries.from_field()
                 field, name=self.name, technique=self.technique, tstamp=self.tstamp
             )

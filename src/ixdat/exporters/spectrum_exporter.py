@@ -22,6 +22,8 @@ class SpectrumExporter:
 
         Args:
             spectrum (Spectrum): The spectrum to export if different from self.spectrum
+                TODO: remove this kwarg. See conversation here:
+                   https://github.com/ixdat/ixdat/pull/30/files#r810926968
             path_to_file (str or Path): The path of the file to export to. Note that if a
                 file already exists with this path, it will be overwritten.
         """
@@ -33,16 +35,18 @@ class SpectrumExporter:
             line = f"{attr} = {getattr(spectrum, attr)}\n"
             header_lines.append(line)
 
-        N_header_lines = len(header_lines) + 3
-        header_lines.append(f"N_header_lines = {N_header_lines}\n")
         header_lines.append("\n")
-        # header_lines.append("".join([(key + self.delim) for key in df.keys()]))
-        df.to_csv(path_to_file, index=False, sep=self.delim)
+
+        # Insert a line, after the first two lines, saying how long the header is.
+        N_header_lines = len(header_lines) + 2
+        # The `+ 2` is for the header length line and the column header line.
+        header_length_line = f"N_header_lines = {N_header_lines}\n"
+        header_lines = header_lines[:2] + [header_length_line] + header_lines[2:]
 
         with open(path_to_file, "w") as f:
             f.writelines(header_lines)
         with open(path_to_file, "a") as f:
-            df.to_csv(f, index=False, sep=self.delim, line_terminator="\n")
+            df.to_csv(f, index=False, sep=self.delim, lineterminator="\n")
 
         print(f"wrote {path_to_file}!")
 
@@ -63,10 +67,13 @@ class SpectrumSeriesExporter:
         self.delim = delim
 
     def export(self, spectrum_series=None, path_to_file=None, spectra_as_rows=True):
-        """Export spectrum to path_to_file.
+        """Export spectrum series to path_to_file.
 
         Args:
-            spectrum (Spectrum): The spectrum to export if different from self.spectrum
+            spectrum_series (Spectrum): The spectrum_series to export if different from
+                self.spectrum_series
+                TODO: remove this kwarg. See conversation here:
+                   https://github.com/ixdat/ixdat/pull/30/files#r810926968
             path_to_file (str or Path): The path of the file to export to. Note that if a
                 file already exists with this path, it will be overwritten.
             spectra_as_rows (bool): This specifies the orientation of the data exported.
@@ -116,13 +123,17 @@ class SpectrumSeriesExporter:
                 f"first column is x='{xseries.name}' with units [{xseries.unit_name}]\n"
             )
 
-        N_header_lines = len(header_lines) + 3
-        header_lines.append(f"N_header_lines = {N_header_lines}\n")
         header_lines.append("\n")
+
+        # Insert a line, after the first two lines, saying how long the header is.
+        N_header_lines = len(header_lines) + 2
+        # The `+ 2` is for the header length line and the column header line.
+        header_length_line = f"N_header_lines = {N_header_lines}\n"
+        header_lines = header_lines[:2] + [header_length_line] + header_lines[2:]
 
         with open(path_to_file, "w") as f:
             f.writelines(header_lines)
         with open(path_to_file, "a") as f:
-            df.to_csv(f, index=False, sep=self.delim, line_terminator="\n")
+            df.to_csv(f, index=False, sep=self.delim, lineterminator="\n")
 
         print(f"wrote {path_to_file}!")
